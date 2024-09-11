@@ -1,0 +1,101 @@
+from flask import Flask, request, jsonify, make_response
+import os
+import logging
+
+app = Flask(__name__)
+
+# === CWE-256: Unprotected Storage of Credentials ===
+# Storing credentials directly in the application in an unprotected manner
+DATABASE_USER = "admin"
+DATABASE_PASSWORD = "password123"  # Unprotected password
+
+# === CWE-257: Storing Passwords in a Recoverable Format ===
+# Insecure storage of password (not using hashing)
+users = {
+    "admin": "password123"  # Storing password in plaintext
+}
+
+# === CWE-183: Permissive List of Allowed Inputs ===
+ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif', 'exe'}  # Allowing dangerous file types
+
+# === CWE-73: External Control of File Name or Path ===
+@app.route('/upload', methods=['POST'])
+def upload_file():
+    file = request.files.get('file')
+    if file and '.' in file.filename and file.filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS:
+        # Saving file without validating the path
+        file_path = os.path.join('/uploads', file.filename)
+        file.save(file_path)  # Vulnerable to path traversal attacks
+        return jsonify({'message': 'File uploaded'})
+    else:
+        return jsonify({'error': 'Invalid file type'}), 400
+
+# === CWE-209: Generation of Error Message Containing Sensitive Information ===
+@app.route('/login', methods=['POST'])
+def login():
+    username = request.form.get('username')
+    password = request.form.get('password')
+
+    # Exposing sensitive information in error messages
+    if username not in users:
+        return jsonify({'error': f'User {username} not found'}), 404
+    elif users[username] != password:
+        return jsonify({'error': f'Password {password} is incorrect'}), 401
+    return jsonify({'message': 'Logged in successfully'})
+
+# === CWE-235: Improper Handling of Extra Parameters ===
+@app.route('/update_profile', methods=['POST'])
+def update_profile():
+    user_id = request.form.get('user_id')
+    new_email = request.form.get('email')
+    
+    # Improper handling of extra parameters (e.g., attacker can send additional data)
+    new_name = request.form.get('name')  # This parameter should not be accepted
+    logging.info(f"Updating profile for user {user_id} with email {new_email} and name {new_name}")
+    return jsonify({'message': 'Profile updated'})
+
+# === CWE-266: Incorrect Privilege Assignment & CWE-269: Improper Privilege Management ===
+@app.route('/admin', methods=['GET'])
+def admin_dashboard():
+    # No proper privilege checking, allowing unauthorized access
+    return jsonify({'message': 'Welcome to the admin dashboard!'})
+
+# === CWE-434: Unrestricted Upload of File with Dangerous Type ===
+@app.route('/upload_avatar', methods=['POST'])
+def upload_avatar():
+    avatar = request.files.get('avatar')
+    if avatar:
+        # No restriction on the file type being uploaded
+        avatar.save(f'./avatars/{avatar.filename}')
+        return jsonify({'message': 'Avatar uploaded'})
+    else:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+# === CWE-598: Use of GET Request Method With Sensitive Query Strings ===
+@app.route('/get_sensitive_info', methods=['GET'])
+def get_sensitive_info():
+    user_id = request.args.get('user_id')
+    # Sensitive information exposed in query string
+    return jsonify({'user_id': user_id, 'info': 'Sensitive information'})
+
+
+# === CWE-311: Missing Encryption of Sensitive Data & CWE-419: Unprotected Primary Channel ===
+# Password is sent over HTTP without encryption
+@app.route('/unencrypted_login', methods=['POST'])
+def unencrypted_login():
+    username = request.form.get('username')
+    password = request.form.get('password')
+    if username == DATABASE_USER and password == DATABASE_PASSWORD:
+        return jsonify({'message': 'Login successful'})
+    else:
+        return jsonify({'error': 'Login failed'}), 401
+
+# === CWE-525: Use of Web Browser Cache Containing Sensitive Information ===
+@app.route('/sensitive_info', methods=['GET'])
+def sensitive_info():
+    # Sensitive info that could be cached in the browser
+    return jsonify({'info': 'Sensitive cached data'})
+
+
+if __name__ == '__main__':
+    app.run(debug=True)
